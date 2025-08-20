@@ -1,6 +1,6 @@
 # 👋 Welcome all dipshits  
 
-This is **Pallada**, a RAG system for our firm.  
+This is **Pallada** 🦉, a RAG system for our firm.  
 
 ### 🔧 How she works  #TechnicalDeets
 - Processes PDFs in Python using **Tesseract OCR**  
