@@ -17,7 +17,7 @@ This is **Pallada**, a RAG system for our firm.
 - Longer prompts seem to respond better
 - Not all sources come from unique files. If the same delvierable appears as multiple sources it probably contains multiple points of interes
 - Acccuracy below 71% can be considered garbadge. Ignore such sources.
-- 
+ 
 ---
 
 ## 📝 Wannados #anydaynow
