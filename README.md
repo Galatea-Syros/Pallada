@@ -47,4 +47,6 @@ This is **Pallada** 🦉, a RAG system for our firm.
 
 7. **Employee-project linkage**  
    - Connect projects to employees. Author metadatum is a start but ideally I'd like the Harvest reports  
-   - Allow **direct scheduling of 1:1s** with employees who worked on relevant projects trhough Pallada’s endpoint. Probably some **Outlook** integration. 
+   - Allow **direct scheduling of 1:1s** with employees who worked on relevant projects trhough Pallada’s endpoint. Probably some **Outlook** integration.
+
+8. **Replace requirements.txt with poetry**
