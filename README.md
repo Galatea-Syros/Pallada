@@ -5,7 +5,7 @@ This is **Pallada**, a RAG system for our firm.
 ### 🔧 How she works  
 - Processes PDFs in Python using **Tesseract OCR**  
 - Splits text with a **Hugging Face tokenizer**  
-- Creates embeddings with **multilingual-mpnet**  
+- Creates embeddings with **multilingual-mpnet-v2**  
 - Stores vectors in **ChromaDB**  
 - Receives input from a **mock-up HTML frontend** via **FastAPI**  
 - Finds the top **5 nearest neighbors** (subject to change) using cosine similarity  
