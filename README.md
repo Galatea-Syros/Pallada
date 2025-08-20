@@ -2,7 +2,7 @@
 
 This is **Pallada**, a RAG system for our firm.  
 
-### 🔧 How she works  
+### 🔧 How she works  #TechnicalDeets
 - Processes PDFs in Python using **Tesseract OCR**  
 - Splits text with a **Hugging Face tokenizer**  
 - Creates embeddings with **multilingual-mpnet-v2**  
@@ -10,13 +10,17 @@ This is **Pallada**, a RAG system for our firm.
 - Receives input from a **mock-up HTML frontend** via **FastAPI**  
 - Finds the top **5 nearest neighbors** (subject to change) using cosine similarity  
 - Provides neighbors as context to an **LLM** (currently **GPT-2** for testing, but will be swapped for a real model via API)  
-- Returns the response **alongside sources and metadata** (with trimming for visual clarity)  
-
-> She don’t cook, she don’t clean, and she fw Cardi.  
-
+- Returns the response **alongside sources and metadata**
 ---
 
-## 📝 Wannados  
+## 👩‍💻 For end users #TreatYourRobotRight
+- Longer prompts seem to respond better
+- Not all sources come from unique files. If the same delvierable appears as multiple sources it probably contains multiple points of interes
+- Acccuracy below 71% can be considered garbadge. Ignore such sources.
+- 
+---
+
+## 📝 Wannados #anydaynow
 
 1. **Swap the LLM**  
    - Connect Pallada to a proper LLM.  
@@ -35,9 +39,12 @@ This is **Pallada**, a RAG system for our firm.
    - Enable conversational back-and-forth.  
    - Requires a better LLM first.  
 
-5. **Frontend polish**  
+5. **Frontend polish**
+   - Make the **filepath** metadatum function as a link
+   - Make the **pagenumber** metadatum more visible
+   - Hide irrelevant for the end user metadata  
    - Beautify the interface. (…like hell I will).  
 
-6. **Employee-project linkage**  
-   - Connect projects to employees.  
-   - Allow **direct scheduling of 1:1s** with employees who worked on relevant projects via Pallada’s endpoint.  
+7. **Employee-project linkage**  
+   - Connect projects to employees. Author metadatum is a start but ideally I'd like the Harvest reports  
+   - Allow **direct scheduling of 1:1s** with employees who worked on relevant projects trhough Pallada’s endpoint. Probably some **Outlook** integration. 
