@@ -7,11 +7,16 @@ from openai import OpenAI
 import chromadb
 from sentence_transformers import SentenceTransformer
 from transformers import pipeline
+from langchain_community.embeddings import JinaEmbeddings
 
 # ---------------- CONFIG ----------------
 OPENAI_MODEL = "text-embedding-3-small"
-LOCAL_EMBED_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-local_model = SentenceTransformer(LOCAL_EMBED_MODEL)
+load_dotenv()
+LOCAL_EMBED_MODEL = "jinaai/jina-embeddings-v3"
+local_model = JinaEmbeddings(
+    model=LOCAL_EMBED_MODEL,
+    jina_api_key=os.getenv("JINA_API_KEY")  # must be set in .env
+)
 
 CHROMA_PERSIST_DIR = ".venv/chroma_db"
 COLLECTION_NAME = "pdf_documents"
@@ -90,11 +95,11 @@ def rag_query(req: QueryRequest):
             return {"error": "Collection not available"}
 
         # 1. Embed the query using the same local model
-        query_embedding = local_model.encode([req.question], convert_to_numpy=True).tolist()
+        query_embedding = local_model.embed_query(req.question)
 
         # 2. Query Chroma for nearest neighbors
         results = collection.query(
-            query_embeddings=query_embedding,
+            query_embeddings=[query_embedding],
             n_results=5
         )
 
