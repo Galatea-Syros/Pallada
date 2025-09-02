@@ -1,38 +1,36 @@
-import os
-import time
-import uuid
-from pathlib import Path
-from typing import List, Dict
 from dotenv import load_dotenv
 from unstructured.partition.pdf import partition_pdf
-from openai import OpenAI
 import chromadb
-from tenacity import retry, wait_exponential, stop_after_attempt
-from sentence_transformers import SentenceTransformer
-from typing import List
-import re
+import os
+from collections import defaultdict
+import uuid
+from typing import List, Dict
+from pathlib import Path
+import time
 import unicodedata
-from transformers import AutoTokenizer
-
+import re
+from langchain_community.embeddings import JinaEmbeddings
 # ---------------- CONFIG ----------------
-OPENAI_MODEL = "text-embedding-3-small"
-LOCAL_EMBED_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-local_model = SentenceTransformer(LOCAL_EMBED_MODEL)
 
-CHUNK_SIZE_TOKENS = 400
-CHUNK_OVERLAP_TOKENS = 100
+load_dotenv()
+LOCAL_EMBED_MODEL = "jinaai/jina-embeddings-v3"
+local_model = JinaEmbeddings(
+    model=LOCAL_EMBED_MODEL,
+    jina_api_key=os.getenv("JINA_API_KEY")  # must be set in .env
+)
+
+
+CHUNK_SIZE_TOKENS = 8000
+CHUNK_OVERLAP_TOKENS = 1500
+MAX_TOKENS = 8192  # Jina v3 limit
 EMBEDDING_BATCH = 50
+GREEK_TOKENIZER_MODEL = "nlpaueb/bert-base-greek-uncased-v1"
 
 CHROMA_PERSIST_DIR = ".venv/chroma_db"
 PDF_DIR = "./Deliverables (phase 0)"
 COLLECTION_NAME = "pdf_documents"
 # -----------------------------------------
 
-# --- Init OpenAI client ---
-load_dotenv()
-client_oa = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-if not client_oa.api_key:
-    raise RuntimeError("Set OPENAI_API_KEY in env")
 
 # --- Init Chroma ---
 client_chroma = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
@@ -45,112 +43,94 @@ else:
 )
 
 
-# --- Token-aware splitter ---
+# Tokenizer for splitting (Greek Roberta/BERT recommended)
+from transformers import AutoTokenizer
+SPLIT_TOKENIZER_MODEL = "nlpaueb/bert-base-greek-uncased-v1"
+splitter_tokenizer = AutoTokenizer.from_pretrained(SPLIT_TOKENIZER_MODEL, model_max_length=10**9)
+
+# --- Utilities ---
+def clean_text(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text)
+    text = re.sub(r"[\r\n\t\f]+", " ", text)
+    text = re.sub(r"[^\x20-\x7E\u0370-\u03FF\u1F00-\u1FFF]+", " ", text)
+    text = re.sub(r"\s{2,}", " ", text)
+    return text.strip()
+
 class TokenAwareTextSplitter:
-    def __init__(self, model_name: str, chunk_size: int, chunk_overlap: int):
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+    def __init__(self, chunk_size: int, chunk_overlap: int):
+        self.tokenizer = splitter_tokenizer
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
 
     def split_text(self, text: str) -> List[str]:
-        tokens = self.tokenizer.encode(text, add_special_tokens=False)
+        tokens = self.tokenizer.encode(text, add_special_tokens=False, truncation=False)
         chunks = []
         start = 0
+        step = self.chunk_size - self.chunk_overlap
         while start < len(tokens):
             end = start + self.chunk_size
             chunk_tokens = tokens[start:end]
-            chunk_text = self.tokenizer.decode(chunk_tokens)
-            chunks.append(chunk_text)
-            start += self.chunk_size - self.chunk_overlap
+            chunk_text = self.tokenizer.decode(chunk_tokens).strip()
+            if chunk_text:
+                chunks.append(chunk_text)
+            start += step
         return chunks
 
-splitter = TokenAwareTextSplitter(LOCAL_EMBED_MODEL, CHUNK_SIZE_TOKENS, CHUNK_OVERLAP_TOKENS)
+splitter = TokenAwareTextSplitter(CHUNK_SIZE_TOKENS, CHUNK_OVERLAP_TOKENS)
 
-def clean_text(text: str) -> str:
-    # Normalize unicode (important for accented Greek characters)
-    text = unicodedata.normalize("NFKC", text)
-
-    # Remove control characters (line breaks, form feeds, etc.)
-    text = re.sub(r"[\r\n\t\f]+", " ", text)
-
-    # Remove weird leftover PDF artifacts (non-printables)
-    text = re.sub(r"[^\x20-\x7E\u0370-\u03FF\u1F00-\u1FFF]+", " ", text)
-    # ↑ keeps ASCII + Greek unicode ranges
-
-    # Collapse multiple spaces
-    text = re.sub(r"\s{2,}", " ", text)
-
-    # Trim leading/trailing spaces
-    return text.strip()
-
-# --- Embedding function with retry ---
-@retry(wait=wait_exponential(min=1, max=20), stop=stop_after_attempt(6))
-def get_embeddings_batch(texts: List[str]) -> List[List[float]]:
-    # Clean texts: remove None, ensure str type
-    clean_texts = [(t if isinstance(t, str) else str(t)) for t in texts]
-    clean_texts = [t if t.strip() != "" else " " for t in clean_texts]
-
-    try:
-        #resp = client_oa.embeddings.create(
-        #    model=OPENAI_MODEL,
-        #    input=clean_texts
-        #)
-        embeddings = local_model.encode(
-            clean_texts,
-            convert_to_numpy=True,  # Keep as list of lists
-            show_progress_bar=True
-        )
-    except Exception as e:
-        print(f"Embedding API call failed: {e}")
-        raise
-
-    # Convert numpy array to list of lists if needed
-    embeddings = embeddings.tolist()
-
-    return embeddings
-
-# --- Element processing ---
-def prepare_chunks_from_elements(elements, source_metadata: Dict) -> List[Dict]:
-    chunks = []
+# --- Merge elements per page ---
+def merge_elements_by_page(elements):
+    page_texts = defaultdict(str)
     for el in elements:
-        # Element type (old/new unstructured)
-        el_type = getattr(el, "element_type", type(el).__name__)
-
-        # Page number (old dict-style vs new dataclass)
+        # Safely get page number
+        metadata = getattr(el, "metadata", None)
         page = None
-        if hasattr(el, "metadata") and el.metadata is not None:
-            if hasattr(el.metadata, "get"):  # old style dict-like
-                page = el.metadata.get("page_number")
-            elif hasattr(el.metadata, "page_number"):
-                page = el.metadata.page_number
-
-        # Try to get element text
-        text = ""
-        if hasattr(el, "get_text") and callable(el.get_text):
-            raw_text  = el.get_text() or ""
-        elif hasattr(el, "text"):
-            raw_text  = el.text or ""
-        else:
-            raw_text  = str(el)
-        # Clean (normalize, remove artifacts, keep meaning)
-        text = clean_text(raw_text)
-        # Skip empty
-        if not text.strip():
+        if metadata is not None:
+            if isinstance(metadata, dict):
+                page = metadata.get("page_number")
+            else:
+                page = getattr(metadata, "page_number", None)
+        if page is None:
             continue
 
-        # Split into token-aware chunks
-        pieces = splitter.split_text(text) if len(text) > 0 else []
+        # Get text
+        text = getattr(el, "get_text", lambda: getattr(el, "text", str(el)))()
+        text = clean_text(text)
+        if text:
+            page_texts[page] += " " + text
+
+    return {page: t.strip() for page, t in page_texts.items()}
+
+# --- Prepare chunks ---
+def prepare_chunks_from_elements(elements, source_metadata: Dict) -> List[Dict]:
+    merged_pages = merge_elements_by_page(elements)
+    chunks = []
+    for page, text in merged_pages.items():
+        # Split only if exceeding max tokens
+        tokens = splitter.tokenizer.encode(text, add_special_tokens=False, truncation=False)
+        if len(tokens) <= MAX_TOKENS:
+            pieces = [text]
+        else:
+            pieces = splitter.split_text(text)
 
         for idx, piece in enumerate(pieces):
             md = {
                 **source_metadata,
                 "page_number": page,
-                "element_type": el_type,
                 "chunk_index": idx,
             }
             chunks.append({"id": str(uuid.uuid4()), "text": piece, "metadata": md})
-
     return chunks
+
+# --- Embedding batch ---
+from tenacity import retry, wait_exponential, stop_after_attempt
+
+@retry(wait=wait_exponential(min=1, max=20), stop=stop_after_attempt(6))
+def get_embeddings_batch(texts: List[str]) -> List[List[float]]:
+    clean_texts = [(t if isinstance(t, str) else str(t)) for t in texts]
+    clean_texts = [t if t.strip() != "" else " " for t in clean_texts]
+    embeddings = local_model.embed_documents(clean_texts)
+    return embeddings
 
 # --- PDF ingestion ---
 def ingest_pdf(pdf_path: Path):
@@ -175,9 +155,8 @@ def ingest_pdf(pdf_path: Path):
         texts_batch.append(chunk["text"])
         metas_batch.append(chunk["metadata"])
 
-        # When batch full or last chunk, process
         if len(texts_batch) >= EMBEDDING_BATCH or i == len(chunks) - 1:
-            print(f"🔹 Embedding {len(texts_batch)} chunks from {pdf_path.name} (batch {i // EMBEDDING_BATCH + 1})")
+            print(f"🔹 Embedding {len(texts_batch)} chunks from {pdf_path.name}")
             embeddings = get_embeddings_batch(texts_batch)
             collection.add(
                 ids=ids_batch,
@@ -187,7 +166,7 @@ def ingest_pdf(pdf_path: Path):
             )
             ids_batch, texts_batch, metas_batch = [], [], []
 
-# --- Folder ingestion ---
+# --- Folder ingestion remains the same ---
 def ingest_folder_recursive(root_folder: str):
     root_path = Path(root_folder)
     pdf_files = sorted(root_path.rglob("*.pdf"))
@@ -214,7 +193,7 @@ def verify_collection():
 
         # Use the same mpnet model for query embedding
         query_text = "project architecture description"
-        query_embedding = local_model.encode([query_text], convert_to_numpy=True).tolist()
+        query_embedding = [local_model.embed_query(query_text)]
 
         qres = collection.query(
             query_embeddings=query_embedding,
