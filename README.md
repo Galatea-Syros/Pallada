@@ -1,4 +1,4 @@
-# 👋 Welcome all dipshits  
+# 👋 Welcome all respected readers  
 
 This is **Pallada** 🦉, a RAG system for our firm.  
 
