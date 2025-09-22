@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pallada Mockup</title>
+    <style>
+        body {
+            font-family: Segoe UI, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #CFD4D7;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #EA1F27;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 10px;
+            margin-top: 20px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="text"] {
+            width: 96.2%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #EA1F27;
+        }
+        button {
+            background-color: #EA1F27;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #AB1118;
+        }
+        button:disabled {
+            background-color: #AB1118;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            display: none;
+        }
+        .result.success {
+            background-color: #CFD4D7;
+            border: 1px solid #9CA6AB;
+            color: #00000;
+        }
+        .result.error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .status.checking {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        .status.online {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status.offline {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .source-item {
+            background-color: #f8f9fa;
+            border-left: 4px solid #EA1F27;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .source-header {
+            font-weight: bold;
+            color: #EA1F27;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .similarity-score {
+            background-color: #2B6A6C;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+        .source-preview {
+            color: #666;
+            margin: 8px 0;
+            line-height: 1.4;
+        }
+        .source-metadata {
+            font-size: 12px;
+            color: #666;
+            background-color: #CFD4D7;
+            padding: 5px 8px;
+            border-radius: 3px;
+            margin-top: 8px;
+        }
+        .expand-btn {
+            background: none;
+            border: 1px solid #EA1F27;
+            color: #EA1F27;
+            padding: 4px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-top: 8px;
+        }
+        .expand-btn:hover {
+            background-color: #EA1F27;
+            color: white;
+        }
+        .source-full {
+            display: none;
+            margin-top: 8px;
+            padding: 10px;
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 11px;
+            line-height: 1.3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Pallada Mockup</h1>
+
+        <div id="statusCheck" class="status checking">
+            Checking server connection...
+        </div>
+
+        <div class="form-group">
+            <label for="question">What can I help you with?</label>
+            <input type="text" id="question" placeholder="Enter a subject here..." />
+        </div>
+
+        <button id="submitBtn" onclick="submitQuery()">Show me relevant projects</button>
+
+        <div id="result" class="result">
+            <h3>Answer:</h3>
+            <p id="answer"></p>
+
+            <div id="sourcesSection" style="display: none; margin-top: 20px;">
+                <h3>Sources Found:</h3>
+                <div id="sourcesList"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Try multiple possible server URLs
+        const POSSIBLE_URLS = [
+            'http://localhost:8001',
+            'http://127.0.0.1:8001',
+            'http://localhost:8000',
+            'http://127.0.0.1:8000'
+        ];
+        let API_BASE = null;
+
+        // Check server status on page load
+        window.onload = function() {
+            checkServerStatus();
+        };
+
+        async function checkServerStatus() {
+            const statusDiv = document.getElementById('statusCheck');
+            statusDiv.textContent = 'Checking server connection...';
+            statusDiv.className = 'status checking';
+
+            for (const url of POSSIBLE_URLS) {
+                try {
+                    console.log(`Trying to connect to: ${url}`);
+                    const response = await fetch(`${url}/`, {
+                        method: 'GET',
+                        mode: 'cors',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        API_BASE = url;
+                        statusDiv.textContent = `✓ Server is online at ${url}!`;
+                        statusDiv.className = 'status online';
+                        console.log('Connected successfully:', data);
+                        return;
+                    } else {
+                        console.log(`${url} returned status ${response.status}`);
+                    }
+                } catch (error) {
+                    console.log(`Failed to connect to ${url}:`, error.message);
+                }
+            }
+
+            // If we get here, none of the URLs worked
+            statusDiv.textContent = '✗ Server is offline. Check console for details.';
+            statusDiv.className = 'status offline';
+            console.error('Could not connect to any server URL:', POSSIBLE_URLS);
+        }
+
+        async function submitQuery() {
+            const question = document.getElementById('question').value.trim();
+            const submitBtn = document.getElementById('submitBtn');
+            const resultDiv = document.getElementById('result');
+            const answerP = document.getElementById('answer');
+
+            if (!question) {
+                alert('Please enter a question.');
+                return;
+            }
+
+            if (!API_BASE) {
+                alert('Server is not connected. Please check the server status.');
+                return;
+            }
+
+            // Show loading state
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = 'Processing <div class="loading"></div>';
+            resultDiv.style.display = 'none';
+
+            try {
+                console.log(`Sending request to: ${API_BASE}/rag`);
+                const response = await fetch(`${API_BASE}/rag`, {
+                    method: 'POST',
+                    mode: 'cors',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ question: question })
+                });
+
+                console.log('Response received:', response.status, response.statusText);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log('Response data:', data);
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                // Show success result
+                answerP.textContent = data.answer || 'No answer received';
+                resultDiv.className = 'result success';
+                resultDiv.style.display = 'block';
+
+                // Display sources if available
+                displaySources(data.sources, data.total_sources_found);
+
+            } catch (error) {
+                // Show error result
+                answerP.textContent = `Error: ${error.message}`;
+                resultDiv.className = 'result error';
+                resultDiv.style.display = 'block';
+                console.error('Query failed:', error);
+            } finally {
+                // Reset button
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Ask Question';
+            }
+        }
+
+        function displaySources(sources, totalCount) {
+            const sourcesSection = document.getElementById('sourcesSection');
+            const sourcesList = document.getElementById('sourcesList');
+
+            if (!sources || sources.length === 0) {
+                sourcesSection.style.display = 'none';
+                return;
+            }
+
+            // Clear previous sources
+            sourcesList.innerHTML = '';
+
+            // Add sources count
+            const countHeader = document.createElement('p');
+            sourcesList.appendChild(countHeader);
+
+            // Add each source
+            sources.forEach((source, index) => {
+                const sourceDiv = document.createElement('div');
+                sourceDiv.className = 'source-item';
+
+                const headerId = `source-${index}`;
+
+                sourceDiv.innerHTML = `
+                    <div class="source-header">
+                        <span>Source ${source.id} : ${source.Title}</span>
+                        ${source.similarity_score ? `<span class="similarity-score">${(source.similarity_score * 100).toFixed(1)}% match</span>` : ''}
+                    </div>
+                    <div class="source-preview">${source.preview}</div>
+                    <button class="expand-btn" onclick="toggleSource('${headerId}')">Show Full Content</button>
+                    <div id="${headerId}" class="source-full">${source.content}</div>
+                    ${Object.keys(source.metadata).length > 0 ? `
+                        <div class="source-metadata">
+                            <strong>Metadata:</strong> ${JSON.stringify(source.metadata, null, 2)}
+                        </div>
+                    ` : ''}
+                `;
+
+                sourcesList.appendChild(sourceDiv);
+            });
+
+            sourcesSection.style.display = 'block';
+        }
+
+        function toggleSource(sourceId) {
+            const sourceDiv = document.getElementById(sourceId);
+            const button = sourceDiv.previousElementSibling;
+
+            if (sourceDiv.style.display === 'none' || sourceDiv.style.display === '') {
+                sourceDiv.style.display = 'block';
+                button.textContent = 'Hide Full Content';
+            } else {
+                sourceDiv.style.display = 'none';
+                button.textContent = 'Show Full Content';
+            }
+        }
+
+        // Allow Enter key to submit
+        document.getElementById('question').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                submitQuery();
+            }
+        });
+    </script>
+</body>
+</html>
