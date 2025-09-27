@@ -4,8 +4,8 @@ This is **Pallada** 🦉, a RAG system for our firm.
 
 ### 🔧 How she works  #TechnicalDeets
 - Processes PDFs in Python using **Tesseract OCR**  
-- Splits text with a **Hugging Face tokenizer**  
-- Creates embeddings with **multilingual-mpnet-v2**  
+- Splits text with by **page**  
+- Creates embeddings with **Jina V3**  
 - Stores vectors in **ChromaDB**  
 - Receives input from a **mock-up HTML frontend** via **FastAPI**  
 - Finds the top **5 nearest neighbors** (subject to change) using cosine similarity  
@@ -16,7 +16,6 @@ This is **Pallada** 🦉, a RAG system for our firm.
 ## 👩‍💻 For end users #TreatYourRobotRight
 - Longer prompts seem to respond better
 - Not all sources come from unique files. If the same file appears as multiple sources it probably contains multiple points of interest
-- Acccuracy below 71% can be considered garbadge. Ignore such sources.
  
 ---
 
